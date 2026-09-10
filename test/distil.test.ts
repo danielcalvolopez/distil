@@ -108,3 +108,9 @@ describe("proposals", () => {
     expect(store.proposals[rule.id].evidence).toHaveLength(2);
   });
 });
+
+describe("config", () => {
+  it("excludes subagent transcripts by default, since their user turns are agent-written prompts", () => {
+    expect(DEFAULT_CONFIG.exclude).toEqual(["/subagents/"]);
+  });
+});
