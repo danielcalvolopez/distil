@@ -29,12 +29,14 @@ Try it on the fixtures: `DISTIL_HOME=/tmp/d distil scan --dir test/fixtures && D
 | interrupt | `[Request interrupted by user]` followed by an imperative | "Stop. Don't…" |
 | lexical | rhetorical shape of a correction | "I said…", "never…", "instead…" |
 | recovery | post-hoc undo language | "revert", "git reset", "force push" |
-| branch | destructive op naming a protected branch | "push … main" |
-| repeat | same instruction / tool chain across sessions | "explain for a non-technical audience" |
+| branch | a protected-branch op you name that the agent actually ran since your last message | "push … main" after `git push origin main` |
+| repeat | same instruction across sessions | "explain for a non-technical audience" |
+
+Only your own words are checked: the first paragraph of each message, without code blocks or quoted lines, and nothing after a line ending in ":" (which usually introduces a paste). Background task notifications are ignored.
 
 Corroboration gate: a rule needs evidence from ≥2 sessions (configurable) unless a strong signal (`branch`, or `recovery`+`interrupt`) is present. Singletons wait in a backlog and surface once a second session corroborates them.
 
-Repeated prompts are clustered by Jaccard similarity on content words; recurring tool n-grams (`Read → Edit → Bash`) are counted between human turns.
+Repeated prompts are clustered by Jaccard similarity on content words. Hook proposals come from a check (tests, lint, typecheck, build) the agent runs right after editing files, at least 3 times across 2 or more sessions: a `PostToolUse` hook could run it automatically.
 
 ## Correction baseline
 

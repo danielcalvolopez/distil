@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTranscript, humanTurns, compactSession, expandSession, EXCERPT_MAX } from "../src/parser.js";
 import { detectCorrections, toEvidence } from "../src/detect/corrections.js";
-import { clusterPrompts, recurringToolSequences } from "../src/detect/patterns.js";
+import { clusterPrompts, recurringPostEditChecks } from "../src/detect/patterns.js";
 import { buildProposals } from "../src/propose.js";
 import { DEFAULT_CONFIG } from "../src/store.js";
 import type { Store } from "../src/types.js";
@@ -27,6 +27,17 @@ describe("parser", () => {
     const s = await parseTranscript(f1);
     expect(humanTurns(s).map((t) => t.id.split(":")[1])).toEqual(["u1", "u2", "u3"]);
   });
+  it("drops background task notifications", async () => {
+    const tmp = join(mkdtempSync(join(tmpdir(), "distil-")), "s.jsonl");
+    const note = {
+      type: "user", sessionId: "s", uuid: "u1",
+      message: { content: "<task-notification>\n<task-id>b1</task-id>\n<summary>Revert main</summary>\n</task-notification>" },
+    };
+    writeFileSync(tmp, JSON.stringify(note) + "\n");
+    const s = await parseTranscript(tmp);
+    expect(s.turns).toHaveLength(1);
+    expect(humanTurns(s)).toEqual([]);
+  });
   it("round-trips sessions through the cache without changing human turns or evidence", async () => {
     const s = await parseTranscript(f2);
     const long = { ...s.turns.find((t) => t.role === "assistant")!, text: "x".repeat(1000) };
@@ -42,7 +53,6 @@ describe("parser", () => {
     const calls = s.turns.flatMap((t) => t.toolCalls);
     expect(calls).toContainEqual({ name: "Bash", id: "x", command: "git push origin main" });
     expect(calls).toContainEqual({ name: "Edit", id: "x", filePath: "/Users/danny/code/alkimi-docs/src/vary.ts", content: "b" });
-    expect(calls).toContainEqual({ name: "Bash", id: "x" });
 
     const tmp = join(mkdtempSync(join(tmpdir(), "distil-")), "s.jsonl");
     const long = "y".repeat(1000);
@@ -51,6 +61,7 @@ describe("parser", () => {
       message: { content: [
         { type: "tool_use", name: "Bash", id: "t1", input: { command: long } },
         { type: "tool_use", name: "Write", id: "t2", input: { file_path: "/p/a.ts", content: long } },
+        { type: "tool_use", name: "Bash", id: "t3", input: {} },
       ] },
     };
     writeFileSync(tmp, JSON.stringify(event) + "\n");
@@ -58,6 +69,7 @@ describe("parser", () => {
     expect(a.toolCalls[0].command).toHaveLength(1000);
     expect(a.toolCalls[1].filePath).toBe("/p/a.ts");
     expect(a.toolCalls[1].content).toHaveLength(EXCERPT_MAX);
+    expect(a.toolCalls[2]).toEqual({ name: "Bash", id: "t3" });
   });
 });
 
@@ -75,11 +87,11 @@ describe("detectors", () => {
     expect(explain).toBeDefined();
     expect(explain!.sessions.size).toBe(2);
   });
-  it("finds the recurring Read>Edit>Bash chain", async () => {
+  it("finds the check the agent runs after editing in both fixture sessions", async () => {
     const ss = [await parseTranscript(f1), await parseTranscript(f2)];
-    const seqs = recurringToolSequences(ss);
-    expect(seqs[0].seq).toEqual(["Read", "Edit", "Bash"]);
-    expect(seqs[0].sessions.size).toBe(2);
+    const [check] = recurringPostEditChecks(ss);
+    expect(check.command).toBe("npm test");
+    expect(check.sessions.size).toBe(2);
   });
 });
 

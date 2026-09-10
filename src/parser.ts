@@ -21,6 +21,7 @@ const NOISE_PATTERNS = [
   /^<bash-input>/,
   /^<bash-stdout>/,
   /^<ide_/,
+  /^<task-notification>/,
 ];
 
 const INTERRUPT_MARKER = /\[Request interrupted by user[^\]]*\]\s*/i;

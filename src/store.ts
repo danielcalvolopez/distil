@@ -8,7 +8,7 @@ export const CONFIG_DIR =
 const STORE_PATH = join(CONFIG_DIR, "store.json")
 const CACHE_PATH = join(CONFIG_DIR, "cache.json")
 /** Bump whenever parser output changes so stale cached sessions are discarded. */
-const PARSER_VERSION = 2
+const PARSER_VERSION = 3
 
 export interface CachedFile {
   size: number
