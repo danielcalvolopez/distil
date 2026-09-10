@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseTranscript, humanTurns, compactSession, expandSession } from "../src/parser.js";
+import { parseTranscript, humanTurns, compactSession, expandSession, EXCERPT_MAX } from "../src/parser.js";
 import { detectCorrections, toEvidence } from "../src/detect/corrections.js";
 import { clusterPrompts, recurringToolSequences } from "../src/detect/patterns.js";
 import { buildProposals } from "../src/propose.js";
@@ -34,6 +36,28 @@ describe("parser", () => {
     expect(humanTurns(back)).toEqual(humanTurns(full));
     expect(back.turns.map(({ text: _t, ...rest }) => rest)).toEqual(full.turns.map(({ text: _t, ...rest }) => rest));
     expect(toEvidence(back.turns.at(-1)!, ["repeat"])).toEqual(toEvidence(long, ["repeat"]));
+  });
+  it("keeps tool inputs: commands and paths in full, content capped", async () => {
+    const s = await parseTranscript(f2);
+    const calls = s.turns.flatMap((t) => t.toolCalls);
+    expect(calls).toContainEqual({ name: "Bash", id: "x", command: "git push origin main" });
+    expect(calls).toContainEqual({ name: "Edit", id: "x", filePath: "/Users/danny/code/alkimi-docs/src/vary.ts", content: "b" });
+    expect(calls).toContainEqual({ name: "Bash", id: "x" });
+
+    const tmp = join(mkdtempSync(join(tmpdir(), "distil-")), "s.jsonl");
+    const long = "y".repeat(1000);
+    const event = {
+      type: "assistant", sessionId: "s", uuid: "a1",
+      message: { content: [
+        { type: "tool_use", name: "Bash", id: "t1", input: { command: long } },
+        { type: "tool_use", name: "Write", id: "t2", input: { file_path: "/p/a.ts", content: long } },
+      ] },
+    };
+    writeFileSync(tmp, JSON.stringify(event) + "\n");
+    const [a] = (await parseTranscript(tmp)).turns;
+    expect(a.toolCalls[0].command).toHaveLength(1000);
+    expect(a.toolCalls[1].filePath).toBe("/p/a.ts");
+    expect(a.toolCalls[1].content).toHaveLength(EXCERPT_MAX);
   });
 });
 

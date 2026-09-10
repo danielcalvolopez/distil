@@ -2,16 +2,11 @@ import { createHash } from "node:crypto";
 import type { Evidence, Proposal, Session, Store } from "./types.js";
 import { detectCorrections } from "./detect/corrections.js";
 import { clusterPrompts, recurringToolSequences, shingle } from "./detect/patterns.js";
+import { clusterByText } from "./detect/cluster.js";
 import type { Config } from "./store.js";
 
 function id(...parts: string[]): string {
   return createHash("sha1").update(parts.join("|")).digest("hex").slice(0, 10);
-}
-
-function jaccard(A: Set<string>, B: Set<string>): number {
-  let i = 0;
-  for (const x of A) if (B.has(x)) i++;
-  return i / (A.size + B.size - i || 1);
 }
 
 /** Rough sentence that captures the instruction, stripped of interjections. */
@@ -42,15 +37,9 @@ export function buildProposals(sessions: Session[], store: Store, cfg: Config): 
   // Merge with backlog singletons from prior scans, then cluster by lexical similarity.
   const pool: Evidence[] = [...Object.values(store.backlog).flat(), ...evidence];
   const byTurn = new Map(pool.map((e) => [e.turnId, e]));
-  const clusters: { words: Set<string>; members: Evidence[] }[] = [];
-  for (const e of byTurn.values()) {
-    const words = new Set(shingle(e.excerpt));
-    const c = clusters.find((cl) => jaccard(words, cl.words) >= 0.35);
-    if (c) c.members.push(e);
-    else clusters.push({ words, members: [e] });
-  }
+  const clusters = clusterByText([...byTurn.values()], (e) => e.excerpt);
   store.backlog = {};
-  for (const { members: c } of clusters) {
+  for (const c of clusters) {
     const sessionsInvolved = new Set(c.map((e) => e.sessionId));
     // "branch" and "recovery" signals are strong enough to surface alone; others need corroboration.
     const strong = c.some((e) => e.signals.includes("branch") || (e.signals.includes("recovery") && e.signals.includes("interrupt")));

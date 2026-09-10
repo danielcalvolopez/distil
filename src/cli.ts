@@ -4,6 +4,9 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { compactSession, expandSession, parseTranscript } from "./parser.js";
 import { buildProposals } from "./propose.js";
+import { detectCorrections } from "./detect/corrections.js";
+import { pairCorrections } from "./detect/pairing.js";
+import { correctionMetrics, formatMetrics } from "./metrics.js";
 import { loadCache, loadConfig, loadStore, saveCache, saveStore, CONFIG_DIR } from "./store.js";
 import type { Proposal, Session } from "./types.js";
 
@@ -82,6 +85,8 @@ export async function scan(args: string[]): Promise<void> {
   for (const f of Object.keys(cache.files)) if (!existsSync(f)) delete cache.files[f];
   const before = Object.keys(store.proposals).length;
   buildProposals(sessions, store, cfg);
+  const records = sessions.flatMap((s) => pairCorrections(s, detectCorrections(s, { protectedBranches: cfg.protectedBranches })));
+  const m = (store.metrics = correctionMetrics(records));
   saveStore(store);
   saveCache(cache);
   const after = Object.keys(store.proposals).length;
@@ -89,6 +94,7 @@ export async function scan(args: string[]): Promise<void> {
   console.log(
     `Scanned ${files.length} transcripts (${parsed} parsed, ${files.length - parsed} cached), ${sessions.reduce((n, s) => n + s.turns.length, 0)} events (${unknown} skipped), ${human} human turns.\n` +
       `Proposals: ${after} total (+${after - before} new), backlog ${Object.keys(store.backlog).length} awaiting corroboration.\n` +
+      `Corrections: ${m.corrections} (${m.paired} paired, ${m.mechanizable} mechanizable); \`distil stats\` shows the baseline.\n` +
       `Run \`distil review\`.`,
   );
 }
@@ -174,6 +180,7 @@ export function stats(): void {
   console.log(`Backlog (awaiting corroboration): ${Object.keys(store.backlog).length}`);
   console.log(`Signals over evidence: ${JSON.stringify(bySignal)}`);
   console.log(`Transcripts tracked: ${Object.keys(store.scannedOffsets).length}`);
+  console.log(store.metrics ? `\n${formatMetrics(store.metrics)}` : "\nCorrection baseline: run `distil scan` first.");
 }
 
 export async function main(argv: string[]): Promise<void> {

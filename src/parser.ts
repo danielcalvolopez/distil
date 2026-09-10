@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { basename, dirname } from "node:path";
-import type { CachedSession, Session, Turn } from "./types.js";
+import type { CachedSession, Session, ToolCall, Turn } from "./types.js";
 
 /** Longest excerpt quoted as evidence before it is cut with "…". */
 export const EXCERPT_MAX = 400;
@@ -32,11 +32,21 @@ function decodeProject(file: string): string {
   return dir;
 }
 
-function textOf(content: unknown): { text: string; tools: string[]; toolResultOnly: boolean } {
+function toolCallOf(name: string, id: unknown, input: unknown): ToolCall {
+  const i = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const call: ToolCall = { name, id: typeof id === "string" ? id : "" };
+  if (typeof i.command === "string") call.command = i.command;
+  if (typeof i.file_path === "string") call.filePath = i.file_path;
+  const content = typeof i.content === "string" ? i.content : typeof i.new_string === "string" ? i.new_string : undefined;
+  if (content !== undefined) call.content = content.slice(0, EXCERPT_MAX);
+  return call;
+}
+
+function textOf(content: unknown): { text: string; tools: ToolCall[]; toolResultOnly: boolean } {
   if (typeof content === "string") return { text: content, tools: [], toolResultOnly: false };
   if (!Array.isArray(content)) return { text: "", tools: [], toolResultOnly: false };
   const texts: string[] = [];
-  const tools: string[] = [];
+  const tools: ToolCall[] = [];
   let sawText = false;
   let sawToolResult = false;
   for (const block of content) {
@@ -46,7 +56,7 @@ function textOf(content: unknown): { text: string; tools: string[]; toolResultOn
       texts.push(b.text);
       sawText = true;
     } else if (b.type === "tool_use" && typeof b.name === "string") {
-      tools.push(b.name);
+      tools.push(toolCallOf(b.name, b.id, b.input));
     } else if (b.type === "tool_result") {
       sawToolResult = true;
     }
@@ -98,7 +108,7 @@ export async function parseTranscript(file: string, fromLine = 0): Promise<Sessi
       role: type,
       ts,
       text: text.replace(INTERRUPT_MARKER, "").trim(),
-      toolUses: tools,
+      toolCalls: tools,
       toolResult: toolResultOnly,
       interrupted: interrupted || (type === "user" && prevAssistantInterrupted),
       meta,
@@ -108,7 +118,7 @@ export async function parseTranscript(file: string, fromLine = 0): Promise<Sessi
   return { sessionId, project, file, turns, unknownEvents };
 }
 
-function isHuman(t: Turn): boolean {
+export function isHuman(t: Turn): boolean {
   return t.role === "user" && !t.toolResult && !t.meta && t.text.length > 0;
 }
 

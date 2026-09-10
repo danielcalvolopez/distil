@@ -7,7 +7,7 @@ export const CONFIG_DIR = process.env.DISTIL_HOME ?? join(homedir(), ".config", 
 const STORE_PATH = join(CONFIG_DIR, "store.json");
 const CACHE_PATH = join(CONFIG_DIR, "cache.json");
 /** Bump whenever parser output changes so stale cached sessions are discarded. */
-const PARSER_VERSION = 1;
+const PARSER_VERSION = 2;
 
 export interface CachedFile {
   size: number;
