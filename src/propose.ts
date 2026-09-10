@@ -15,22 +15,46 @@ function ruleSentence(text: string): string {
   return first.replace(/^[\s\-—–,]+/, "").replace(/^(no|nope|stop|wait|hold on|again|actually)[,!.]?\s*/i, "").replace(/^[\s\-—–,]+/, "").trim();
 }
 
-function upsert(store: Store, p: Proposal): void {
+function upsert(store: Store, p: Proposal, generated: Set<string>): void {
+  generated.add(p.id);
   const existing = store.proposals[p.id];
   if (!existing) {
     store.proposals[p.id] = p;
     return;
   }
-  // Keep the human decision; merge evidence.
+  // Keep the human decision; merge evidence. An undecided proposal takes the freshly built draft.
   const seen = new Set(existing.evidence.map((e) => e.turnId));
   for (const e of p.evidence) if (!seen.has(e.turnId)) existing.evidence.push(e);
   existing.lastSeen = Math.max(existing.lastSeen, p.lastSeen);
   existing.firstSeen = Math.min(existing.firstSeen, p.firstSeen);
   existing.projects = [...new Set([...existing.projects, ...p.projects])];
   existing.confidence = Math.max(existing.confidence, p.confidence);
+  existing.counts = p.counts;
+  if (existing.status === "pending" || existing.status === "deferred") {
+    existing.title = p.title;
+    existing.draft = p.draft;
+  }
 }
 
+function hookSettings(command: string): string {
+  return JSON.stringify(
+    { hooks: { PostToolUse: [{ matcher: "Edit|MultiEdit|Write", hooks: [{ type: "command", command }] }] } },
+    null,
+    2,
+  );
+}
+
+/** Rebuilds every proposal from the given sessions. Undecided proposals the sessions no longer support are dropped. */
 export function buildProposals(sessions: Session[], store: Store, cfg: Config): void {
+  const generated = new Set<string>();
+  const upsertP = (p: Proposal) => upsert(store, p, generated);
+  buildAll(sessions, store, cfg, upsertP);
+  for (const [id, p] of Object.entries(store.proposals)) {
+    if ((p.status === "pending" || p.status === "deferred") && !generated.has(id)) delete store.proposals[id];
+  }
+}
+
+function buildAll(sessions: Session[], store: Store, cfg: Config, upsert: (p: Proposal) => void): void {
   // ---- corrections → rules ----------------------------------------------
   const evidence: Evidence[] = sessions.flatMap((s) => detectCorrections(s, { protectedBranches: cfg.protectedBranches }));
 
@@ -63,7 +87,7 @@ export function buildProposals(sessions: Session[], store: Store, cfg: Config): 
       lastSeen: Math.max(...c.map((e) => e.ts || 0)),
       status: "pending",
     };
-    upsert(store, p);
+    upsert(p);
   }
 
   // ---- repeated prompts → skills -----------------------------------------
@@ -99,7 +123,7 @@ export function buildProposals(sessions: Session[], store: Store, cfg: Config): 
       lastSeen: Math.max(...cl.turns.map((t) => t.ts || 0)),
       status: "pending",
     };
-    upsert(store, p);
+    upsert(p);
   }
 
   // ---- checks the agent keeps running after edits → hooks -----------------
@@ -108,17 +132,16 @@ export function buildProposals(sessions: Session[], store: Store, cfg: Config): 
       id: id("hook", check.command),
       kind: "hook",
       title: `After editing, the agent runs \`${check.command}\``,
-      target: ".claude/settings.json (hooks)",
-      draft:
-        `The agent ran \`${check.command}\` right after editing files ${check.count}× across ${check.sessions.size} sessions.\n` +
-        `Consider a PostToolUse hook matching "Edit|MultiEdit|Write" that runs it automatically, so the check is never skipped.`,
+      target: ".claude/settings.json",
+      draft: hookSettings(check.command),
       confidence: Math.min(1, 0.3 + 0.1 * check.sessions.size),
       evidence: check.examples,
+      counts: { occurrences: check.count, sessions: check.sessions.size },
       projects: [...new Set(check.examples.map((e) => e.project))],
       firstSeen: Math.min(...check.examples.map((e) => e.ts || Date.now())),
       lastSeen: Math.max(...check.examples.map((e) => e.ts || 0)),
       status: "pending",
     };
-    upsert(store, p);
+    upsert(p);
   }
 }

@@ -106,6 +106,8 @@ export interface Proposal {
   draft: string;
   confidence: number;       // 0..1
   evidence: Evidence[];
+  /** True totals when evidence is only a sample (hooks keep 3 examples). */
+  counts?: { occurrences: number; sessions: number };
   projects: string[];
   firstSeen: number;
   lastSeen: number;

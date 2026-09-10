@@ -14,7 +14,7 @@ Local-first: reads `~/.claude/projects/**/*.jsonl` on your machine. No server, n
 ```bash
 npm install && npm run build && npm link   # or: npx tsx src/cli.ts <cmd>
 distil scan          # parse transcripts, build proposals
-distil review        # a / r / e / d / v / q
+distil review        # one key each: accept / reject / edit (opens $EDITOR) / defer / view evidence / skip / quit
 distil export        # accepted proposals as paste-ready blocks per target file
 distil report --json # machine-readable pending list
 distil stats         # precision, signal breakdown, backlog, correction baseline
@@ -63,6 +63,8 @@ Symptom codes follow the misalignment taxonomy in [research/misalignment-taxonom
 ```
 
 `include` and `exclude` match substrings of transcript paths. Subagent transcripts are excluded by default because their "user" turns are prompts written by the parent agent, not by you. Setting your own `exclude` replaces the default, so keep `"/subagents/"` in the list.
+
+Each `scan` rebuilds the proposals from the transcripts it reads: undecided (pending or deferred) proposals that the current transcripts and detectors no longer produce are dropped, while accepted, rejected and edited ones are kept with their decision. So `scan --dir` on a different folder replaces the pending queue with that folder's proposals.
 
 `scan` caches parsed transcripts in `cache.json` beside the store and re-parses only files whose size or mtime changed; `--full` ignores the cache. Deleting `cache.json` is always safe.
 
