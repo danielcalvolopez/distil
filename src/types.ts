@@ -1,5 +1,14 @@
 export type Role = "user" | "assistant";
 
+/** A tool call as kept by the parser: only the input fields a check can match on. */
+export interface ToolCall {
+  name: string;
+  id: string;
+  command?: string;  // Bash tool_input.command, full
+  filePath?: string; // tool_input.file_path, full
+  content?: string;  // Write content / Edit new_string, capped at EXCERPT_MAX
+}
+
 /** One meaningful turn extracted from a transcript. */
 export interface Turn {
   id: string;
@@ -10,7 +19,7 @@ export interface Turn {
   role: Role;
   ts: number;           // epoch ms (0 if unknown)
   text: string;         // concatenated text blocks
-  toolUses: string[];   // tool names invoked in this assistant turn
+  toolCalls: ToolCall[]; // tool calls made in this assistant turn
   toolResult: boolean;  // user turn that only carries tool_result blocks
   interrupted: boolean; // user interrupted the previous assistant turn
   meta: boolean;        // isMeta / slash-command / hook noise

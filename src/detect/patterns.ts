@@ -118,7 +118,7 @@ export function recurringToolSequences(sessions: Session[], n = 3, min = 3): Too
       run = [];
     };
     for (const t of s.turns) {
-      if (t.role === "assistant") for (const tool of t.toolUses) run.push({ tool, turn: t });
+      if (t.role === "assistant") for (const { name: tool } of t.toolCalls) run.push({ tool, turn: t });
       else if (!t.toolResult && !t.meta) flush();
     }
     flush();
