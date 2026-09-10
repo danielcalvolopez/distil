@@ -81,6 +81,19 @@ export interface CorrectionRecord {
   invalid?: "invisible_agent_action";
 }
 
+/** The correction baseline `scan` computes and `stats` prints (spec §7, M1 and M4). */
+export interface CorrectionMetrics {
+  corrections: number;
+  paired: number;
+  mechanizable: number;
+  bySymptom: Record<Symptom, number>;
+  preferences: number;           // clusters of corrections
+  preferencesRecurred: number;   // clusters with more than one correction
+  recurring: number;             // corrections restating an earlier one in the same cluster
+  recurringCrossSession: number; // …in a session where that preference hadn't been stated yet
+  computedAt: number;
+}
+
 export type ProposalKind = "rule" | "skill" | "hook";
 
 export interface Proposal {
@@ -107,4 +120,6 @@ export interface Store {
   proposals: Record<string, Proposal>;
   /** Singletons waiting for corroboration. */
   backlog: Record<string, Evidence[]>;
+  /** Correction baseline from the last scan. */
+  metrics?: CorrectionMetrics;
 }
