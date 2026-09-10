@@ -17,7 +17,7 @@ distil scan          # parse transcripts, build proposals
 distil review        # a / r / e / d / v / q
 distil export        # accepted proposals as paste-ready blocks per target file
 distil report --json # machine-readable pending list
-distil stats         # precision, signal breakdown, backlog
+distil stats         # precision, signal breakdown, backlog, correction baseline
 ```
 
 Try it on the fixtures: `DISTIL_HOME=/tmp/d distil scan --dir test/fixtures && DISTIL_HOME=/tmp/d distil review`
@@ -35,6 +35,16 @@ Try it on the fixtures: `DISTIL_HOME=/tmp/d distil scan --dir test/fixtures && D
 Corroboration gate: a rule needs evidence from ≥2 sessions (configurable) unless a strong signal (`branch`, or `recovery`+`interrupt`) is present. Singletons wait in a backlog and surface once a second session corroborates them.
 
 Repeated prompts are clustered by Jaccard similarity on content words; recurring tool n-grams (`Read → Edit → Bash`) are counted between human turns.
+
+## Correction baseline
+
+`scan` pairs each detected correction with the agent action it corrected (every agent turn since your previous message, including tool commands and file paths), tags it with a symptom, and `stats` reports:
+
+- **paired**: corrections that followed an agent action distil can see
+- **mechanizable (candidate)**: corrections a check could plausibly enforce: a prohibition with a command or file path to match (S3/S4), or a disputed claim of success (S7). It's an upper bound; later milestones validate real checks.
+- **recurrence despite correction**: corrections that restate one you already gave. This is how often being told once didn't stick.
+
+Symptom codes follow the misalignment taxonomy in [research/misalignment-taxonomy-20k-sessions.md](research/misalignment-taxonomy-20k-sessions.md).
 
 ## Config
 
