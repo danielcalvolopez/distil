@@ -51,6 +51,9 @@ export type Signal =
   | "branch"         // protected-branch / destructive git operation
   | "repeat";        // same instruction restated across sessions
 
+/** Misalignment-taxonomy symptom codes distil can tag without an LLM (see research/misalignment-taxonomy-20k-sessions.md). */
+export type Symptom = "S3" | "S4" | "S7" | "unclassified";
+
 export interface Evidence {
   turnId: string;
   sessionId: string;
