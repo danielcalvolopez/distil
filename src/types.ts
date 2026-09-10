@@ -65,6 +65,22 @@ export interface Evidence {
   signals: Signal[];
 }
 
+/** The agent behaviour a correction responded to: every agent turn since the previous human turn. */
+export interface Violation {
+  turnIds: string[];
+  toolCalls: ToolCall[];
+  text: string; // the agent's prose in those turns, newline-joined
+}
+
+/** A correction paired with the behaviour it corrected (spec §2.1). */
+export interface CorrectionRecord {
+  correction: Evidence;
+  quote: string;               // first user-authored sentence; always an exact substring of the turn text
+  violation: Violation | null;
+  symptom: Symptom;
+  invalid?: "invisible_agent_action";
+}
+
 export type ProposalKind = "rule" | "skill" | "hook";
 
 export interface Proposal {
