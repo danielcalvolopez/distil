@@ -56,9 +56,11 @@ Symptom codes follow the misalignment taxonomy in [research/misalignment-taxonom
   "corroboration": 2,
   "protectedBranches": ["main", "master", "production"],
   "include": [],
-  "exclude": []
+  "exclude": ["/subagents/"]
 }
 ```
+
+`include` and `exclude` match substrings of transcript paths. Subagent transcripts are excluded by default because their "user" turns are prompts written by the parent agent, not by you. Setting your own `exclude` replaces the default, so keep `"/subagents/"` in the list.
 
 `scan` caches parsed transcripts in `cache.json` beside the store and re-parses only files whose size or mtime changed; `--full` ignores the cache. Deleting `cache.json` is always safe.
 
