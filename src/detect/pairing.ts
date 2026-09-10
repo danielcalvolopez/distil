@@ -1,20 +1,11 @@
 import type { CorrectionRecord, Evidence, Session, ToolCall, Turn } from "../types.js";
 import { isHuman } from "../parser.js";
+import { authoredText } from "./corrections.js";
 import { classifySymptom } from "./symptom.js";
 
 /** First user-authored sentence, skipping fenced code and quoted (">") lines. */
 export function quoteOf(text: string): string {
-  let inFence = false;
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (line.startsWith("```")) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence || !line || line.startsWith(">")) continue;
-    return line.split(/(?<=[.!?])\s/)[0];
-  }
-  return "";
+  return authoredText(text).split("\n")[0].split(/(?<=[.!?])\s/)[0];
 }
 
 export function pairCorrections(session: Session, evidence: Evidence[]): CorrectionRecord[] {
@@ -42,7 +33,7 @@ function toRecord(correction: Evidence, human: Turn, agent: Turn[]): CorrectionR
     correction,
     quote: quoteOf(human.text),
     violation: acted ? { turnIds: agent.map((a) => a.id), toolCalls, text } : null,
-    symptom: classifySymptom(human.text),
+    symptom: classifySymptom(authoredText(human.text)),
     ...(!acted && { invalid: "invisible_agent_action" as const }),
   };
 }

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Evidence, Proposal, Session, Store } from "./types.js";
 import { detectCorrections } from "./detect/corrections.js";
-import { clusterPrompts, recurringToolSequences, shingle } from "./detect/patterns.js";
+import { clusterPrompts, recurringPostEditChecks, shingle } from "./detect/patterns.js";
 import { clusterByText } from "./detect/cluster.js";
 import type { Config } from "./store.js";
 
@@ -102,22 +102,21 @@ export function buildProposals(sessions: Session[], store: Store, cfg: Config): 
     upsert(store, p);
   }
 
-  // ---- repeated tool chains → hooks --------------------------------------
-  for (const seq of recurringToolSequences(sessions)) {
+  // ---- checks the agent keeps running after edits → hooks -----------------
+  for (const check of recurringPostEditChecks(sessions, 3, cfg.corroboration)) {
     const p: Proposal = {
-      id: id("hook", seq.seq.join(">")),
+      id: id("hook", check.command),
       kind: "hook",
-      title: `Recurring tool chain: ${seq.seq.join(" → ")}`,
+      title: `After editing, the agent runs \`${check.command}\``,
       target: ".claude/settings.json (hooks)",
       draft:
-        `The agent ran ${seq.seq.join(" → ")} ${seq.count}× across ${seq.sessions.size} sessions.\n` +
-        `Consider a PostToolUse hook on "${seq.seq[0]}" that runs the follow-up steps automatically,\n` +
-        `or a skill step that names this chain so the agent stops re-deriving it.`,
-      confidence: Math.min(1, 0.2 + 0.05 * seq.count),
-      evidence: seq.examples,
-      projects: [...new Set(seq.examples.map((e) => e.project))],
-      firstSeen: Math.min(...seq.examples.map((e) => e.ts || Date.now())),
-      lastSeen: Math.max(...seq.examples.map((e) => e.ts || 0)),
+        `The agent ran \`${check.command}\` right after editing files ${check.count}× across ${check.sessions.size} sessions.\n` +
+        `Consider a PostToolUse hook matching "Edit|MultiEdit|Write" that runs it automatically, so the check is never skipped.`,
+      confidence: Math.min(1, 0.3 + 0.1 * check.sessions.size),
+      evidence: check.examples,
+      projects: [...new Set(check.examples.map((e) => e.project))],
+      firstSeen: Math.min(...check.examples.map((e) => e.ts || Date.now())),
+      lastSeen: Math.max(...check.examples.map((e) => e.ts || 0)),
       status: "pending",
     };
     upsert(store, p);

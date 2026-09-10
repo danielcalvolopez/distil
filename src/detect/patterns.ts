@@ -7,8 +7,8 @@ import { toEvidence } from "./corrections.js";
  *  1. Prompt patterns — the human types the same kind of instruction across sessions
  *     ("explain what you did for a non-technical audience", "run the full test suite and fix").
  *     Candidate: a skill or a slash command.
- *  2. Tool sequences — the agent performs the same tool chain over and over
- *     (Read→Edit→Bash(test)→Bash(lint)). Candidate: a hook or a skill step.
+ *  2. Post-edit checks — right after editing files, the agent keeps running the same check
+ *     (npm test, tsc, lint). Candidate: a PostToolUse hook that runs it automatically.
  */
 
 const STOP = new Set(
@@ -90,38 +90,57 @@ export function clusterPrompts(sessions: Session[], threshold = 0.45, minWords =
     });
 }
 
-export interface ToolSequence {
-  seq: string[];
+export interface CheckPattern {
+  command: string; // normalised, e.g. "npm test"
   count: number;
   sessions: Set<string>;
   examples: Evidence[];
 }
 
-/** Count recurring n-grams of tool names within assistant runs between human turns. */
-export function recurringToolSequences(sessions: Session[], n = 3, min = 3): ToolSequence[] {
-  const counts = new Map<string, ToolSequence>();
+const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+const RUNNERS = new Set([
+  "npm", "pnpm", "yarn", "bun", "npx", "pnpx", "bunx", "deno", "make", "just", "cargo", "go", "uv", "poetry",
+  "pytest", "tsc", "eslint", "prettier", "biome", "ruff", "mypy", "vitest", "jest", "gradle", "mvn", "dotnet", "swift",
+]);
+const CHECK = /\b(test|tests|lint|typecheck|type-check|tsc|build|format|fmt|check|vet|vitest|jest|pytest|eslint|prettier|ruff|mypy|clippy|biome)\b/;
+
+/** "cd app && CI=1 npm test -- --run foo" → "npm test": the first segment that runs a check, without flags or paths. */
+export function checkCommand(command: string): string | undefined {
+  for (const segment of command.split("\n")[0].split(/&&|\|\||;|\|/)) {
+    const words: string[] = [];
+    for (const w of segment.trim().split(/\s+/)) {
+      if (!w || (words.length === 0 && w.includes("="))) continue; // env assignments
+      if (w.startsWith("-") || /[/"'=.<>&]/.test(w) || words.length === 3) break;
+      words.push(w);
+    }
+    const cmd = words.join(" ");
+    if (RUNNERS.has(words[0]) && CHECK.test(cmd)) return cmd;
+  }
+  return undefined;
+}
+
+/** Checks the agent runs right after editing files, counted between human turns. */
+export function recurringPostEditChecks(sessions: Session[], min = 3, minSessions = 2): CheckPattern[] {
+  const found = new Map<string, CheckPattern>();
   for (const s of sessions) {
-    let run: { tool: string; turn: Turn }[] = [];
-    const flush = () => {
-      for (let i = 0; i + n <= run.length; i++) {
-        const window = run.slice(i, i + n);
-        const seq = window.map((w) => w.tool);
-        // skip trivial repeats like Read,Read,Read
-        if (new Set(seq).size === 1) continue;
-        const k = seq.join(">");
-        const entry = counts.get(k) ?? { seq, count: 0, sessions: new Set(), examples: [] };
+    let edited = false;
+    for (const t of s.turns) {
+      if (t.role !== "assistant") {
+        if (!t.toolResult && !t.meta) edited = false;
+        continue;
+      }
+      for (const c of t.toolCalls) {
+        if (EDIT_TOOLS.has(c.name)) edited = true;
+        const cmd = edited && c.command ? checkCommand(c.command) : undefined;
+        if (!cmd) continue;
+        edited = false;
+        const entry = found.get(cmd) ?? { command: cmd, count: 0, sessions: new Set<string>(), examples: [] };
         entry.count++;
         entry.sessions.add(s.sessionId);
-        if (entry.examples.length < 3) entry.examples.push(toEvidence(window[0].turn, ["repeat"]));
-        counts.set(k, entry);
+        if (entry.examples.length < 3) entry.examples.push(toEvidence(t, ["repeat"]));
+        found.set(cmd, entry);
       }
-      run = [];
-    };
-    for (const t of s.turns) {
-      if (t.role === "assistant") for (const { name: tool } of t.toolCalls) run.push({ tool, turn: t });
-      else if (!t.toolResult && !t.meta) flush();
     }
-    flush();
   }
-  return [...counts.values()].filter((v) => v.count >= min && v.sessions.size >= 2).sort((a, b) => b.count - a.count);
+  return [...found.values()].filter((p) => p.count >= min && p.sessions.size >= minSessions).sort((a, b) => b.count - a.count);
 }
