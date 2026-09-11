@@ -7,6 +7,7 @@ import { buildProposals } from "./propose.js";
 import { detectCorrections } from "./detect/corrections.js";
 import { pairCorrections } from "./detect/pairing.js";
 import { correctionMetrics, formatMetrics } from "./metrics.js";
+import { editWith, runReview } from "./review.js";
 import { loadCache, loadConfig, loadStore, saveCache, saveStore, CONFIG_DIR } from "./store.js";
 import type { Proposal, Session } from "./types.js";
 
@@ -110,35 +111,42 @@ function fmt(p: Proposal): string {
   return `[${p.kind}] ${p.title}\n   target: ${p.target}  confidence: ${p.confidence.toFixed(2)}  evidence: ${p.evidence.length} (${new Set(p.evidence.map((e) => e.sessionId)).size} sessions)  projects: ${proj}`;
 }
 
+/** One keypress in a terminal; the first character of each typed line when input is piped. */
+function keyReader(): { readKey: () => Promise<string>; close: () => void } {
+  if (!stdin.isTTY) {
+    const rl = createInterface({ input: stdin });
+    const lines = rl[Symbol.asyncIterator]();
+    return {
+      readKey: async () => {
+        const { value, done } = await lines.next();
+        return done ? "q" : value.trim().charAt(0);
+      },
+      close: () => rl.close(),
+    };
+  }
+  return {
+    readKey: () =>
+      new Promise((resolve) => {
+        stdin.setRawMode(true);
+        stdin.resume();
+        stdin.once("data", (d) => {
+          stdin.setRawMode(false);
+          stdin.pause();
+          resolve(String(d));
+        });
+      }),
+    close: () => {},
+  };
+}
+
 export async function review(): Promise<void> {
   const store = loadStore();
-  const queue = pending(store);
-  if (queue.length === 0) {
-    console.log("Nothing to review. Run `distil scan` first.");
-    return;
+  const keys = keyReader();
+  try {
+    await runReview(store, { write: (s) => stdout.write(s), readKey: keys.readKey, edit: async (text) => editWith(text) }, saveStore);
+  } finally {
+    keys.close();
   }
-  const rl = createInterface({ input: stdin, output: stdout });
-  for (const [i, p] of queue.entries()) {
-    console.log(`\n(${i + 1}/${queue.length}) ${fmt(p)}\n\n${p.draft}\n`);
-    let done = false;
-    while (!done) {
-      const a = (await rl.question("[a]ccept [r]eject [e]dit [d]efer [v]iew evidence [q]uit > ")).trim().toLowerCase();
-      if (a === "a") { p.status = "accepted"; p.finalText = p.draft; done = true; }
-      else if (a === "r") { p.status = "rejected"; done = true; }
-      else if (a === "d") { p.status = "deferred"; done = true; }
-      else if (a === "e") { p.finalText = await rl.question("New text (single line, use \\n for breaks):\n"); p.finalText = p.finalText.replace(/\\n/g, "\n"); p.status = "edited"; done = true; }
-      else if (a === "v") {
-        for (const e of p.evidence) {
-          const when = e.ts ? new Date(e.ts).toISOString().slice(0, 10) : "?";
-          console.log(`  — ${when} ${e.sessionId.slice(0, 8)} L${e.line} [${e.signals.join(",")}]\n    ${e.excerpt.replace(/\n/g, "\n    ")}`);
-        }
-      } else if (a === "q") { rl.close(); saveStore(store); return; }
-      if (done) p.decidedAt = Date.now();
-    }
-    saveStore(store);
-  }
-  rl.close();
-  console.log("\nDone. `distil export` prints accepted proposals as paste-ready blocks.");
 }
 
 export function report(args: string[]): void {

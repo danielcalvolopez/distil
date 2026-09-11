@@ -119,6 +119,30 @@ describe("proposals", () => {
     expect(store.proposals[rule.id].status).toBe("rejected");
     expect(store.proposals[rule.id].evidence).toHaveLength(2);
   });
+  it("drafts a hook as paste-ready settings JSON and keeps the true counts", async () => {
+    const ss = [await parseTranscript(f1), await parseTranscript(f2)];
+    const store: Store = { version: 1, scannedOffsets: {}, proposals: {}, backlog: {} };
+    buildProposals(ss, store, DEFAULT_CONFIG);
+    const hook = Object.values(store.proposals).find((p) => p.kind === "hook")!;
+    expect(JSON.parse(hook.draft)).toEqual({
+      hooks: { PostToolUse: [{ matcher: "Edit|MultiEdit|Write", hooks: [{ type: "command", command: "npm test" }] }] },
+    });
+    expect(hook.counts).toEqual({ occurrences: 3, sessions: 2 });
+  });
+  it("drops undecided proposals the current scan no longer produces and refreshes the rest", async () => {
+    const ss = [await parseTranscript(f1), await parseTranscript(f2)];
+    const store: Store = { version: 1, scannedOffsets: {}, proposals: {}, backlog: {} };
+    buildProposals(ss, store, DEFAULT_CONFIG);
+    const rule = Object.values(store.proposals).find((p) => p.kind === "rule")!;
+    rule.draft = "- stale draft";
+    const stale = (status: Store["proposals"][string]["status"], id: string) => ({ ...rule, id, status, evidence: [] });
+    store.proposals.oldPending = stale("pending", "oldPending");
+    store.proposals.oldDeferred = stale("deferred", "oldDeferred");
+    store.proposals.oldRejected = stale("rejected", "oldRejected");
+    buildProposals(ss, store, DEFAULT_CONFIG);
+    expect(Object.keys(store.proposals).sort()).toEqual([...Object.keys(store.proposals).filter((k) => !k.startsWith("old")), "oldRejected"].sort());
+    expect(store.proposals[rule.id].draft).not.toBe("- stale draft");
+  });
 });
 
 describe("config", () => {
